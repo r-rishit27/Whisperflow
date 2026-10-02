@@ -1,0 +1,7 @@
+# Never upload local secrets or build output with `vercel deploy`.
+.env
+.env.*
+!.env.example
+.next
+node_modules
+*.tsbuildinfo

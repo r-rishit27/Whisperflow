@@ -1,0 +1,255 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------
+   MediMantra theme — calm teal on white, tuned for elderly users.
+   Everything here is deliberately large and high contrast:
+   18px base text, >=56px touch targets, visible focus rings.
+   --------------------------------------------------------------- */
+
+@theme {
+  /* Teal ramp. --color-teal-700 is the action colour: 4.9:1 against
+     white, so white label text on a teal button passes WCAG AA. */
+  --color-teal-50: #f0faf8;
+  --color-teal-100: #d6efeb;
+  --color-teal-200: #a9ddd7;
+  --color-teal-300: #74c4bc;
+  --color-teal-400: #44a79e;
+  --color-teal-500: #1e8a80;
+  --color-teal-600: #137a70;
+  --color-teal-700: #0f766e;
+  --color-teal-800: #0b574f;
+  --color-teal-900: #0b2b2a;
+
+  /* Semantic tokens used by the components. */
+  --color-surface: #ffffff;
+  --color-surface-muted: #f2f7f6;
+  --color-ink: #0b2b2a;
+  --color-ink-muted: #3f5c58;
+  --color-line: #cbdedb;
+  --color-accent: var(--color-teal-700);
+  --color-accent-ink: #ffffff;
+  /* Status colours. Each strong colour is >=4.5:1 on white and on its own
+     soft tint, so text stays readable inside the banners and badges. */
+  --color-danger: #a6241c;
+  --color-danger-soft: #fdecea;
+  --color-warning: #9a4a00;
+  --color-warning-soft: #fff1e0;
+  --color-success: #156b3a;
+  --color-success-soft: #e6f4ea;
+
+  /* Adherence chart. Validated with the dataviz skill's checker: "taken"
+     is teal, not green, because green vs red is only dE 5.3 apart for
+     red-green colourblind readers (dE 11 with teal; target >= 8). Skipped
+     and upcoming are deliberately quiet; the legend and table carry them. */
+  --color-chart-taken: #0f766e;
+  --color-chart-missed: #a6241c;
+  --color-chart-skipped: #7a8a87;
+  --color-chart-upcoming: #a9ddd7;
+
+  /* 18px base. Tailwind's text-base therefore reads as 18px and the
+     rest of the scale steps up from there. */
+  --text-base: 1.125rem;
+  --text-base--line-height: 1.6;
+  --text-lg: 1.3125rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 1.875rem;
+  --text-3xl: 2.25rem;
+
+  /* Minimum comfortable hit area, and the height of the tab bar. */
+  --spacing-touch: 3.5rem;
+  --spacing-nav: 5.25rem;
+  --spacing-sidebar: 16rem;
+
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+}
+
+:root {
+  color-scheme: light;
+  font-size: 18px;
+}
+
+/* High-contrast dark variant. Elderly users often invert their
+   display; keep the same contrast guarantees there. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-surface: #07201f;
+    --color-surface-muted: #0d2e2c;
+    --color-ink: #f0faf8;
+    --color-ink-muted: #a9ddd7;
+    --color-line: #1e4f4a;
+    --color-accent: #74c4bc;
+    --color-accent-ink: #042220;
+    --color-danger: #ff9a8f;
+    --color-danger-soft: #3a1512;
+    --color-warning: #ffb866;
+    --color-warning-soft: #33220d;
+    --color-success: #7fd8a0;
+    --color-success-soft: #0f2e1c;
+    --color-chart-taken: #5fb8c9;
+    --color-chart-missed: #ff8a7a;
+    --color-chart-skipped: #8fa5a1;
+    --color-chart-upcoming: #1e4f4a;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-surface: #07201f;
+  --color-surface-muted: #0d2e2c;
+  --color-ink: #f0faf8;
+  --color-ink-muted: #a9ddd7;
+  --color-line: #1e4f4a;
+  --color-accent: #74c4bc;
+  --color-accent-ink: #042220;
+  --color-danger: #ff9a8f;
+  --color-danger-soft: #3a1512;
+  --color-warning: #ffb866;
+  --color-warning-soft: #33220d;
+  --color-success: #7fd8a0;
+  --color-success-soft: #0f2e1c;
+  --color-chart-taken: #5fb8c9;
+  --color-chart-missed: #ff8a7a;
+  --color-chart-skipped: #8fa5a1;
+  --color-chart-upcoming: #1e4f4a;
+}
+
+body {
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Room for the navigation: below on phones (pb-nav on main), beside on
+   desktop. Pages without the nav (sign-in, public family page) need
+   neither. */
+body:not(:has([data-app-nav])) #main {
+  padding-bottom: 3rem;
+}
+
+@media (min-width: 1024px) {
+  body:has([data-app-nav]) #main {
+    padding-left: calc(var(--spacing-sidebar) + 2.5rem);
+    padding-right: 2.5rem;
+  }
+  #main {
+    padding-bottom: 3rem;
+  }
+}
+
+/* A focus ring that is impossible to miss. */
+*:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: 0.5rem;
+}
+
+/* Never shrink tap targets below the comfortable minimum. */
+button,
+a[role="button"],
+[role="tab"],
+input,
+select {
+  min-height: var(--spacing-touch);
+}
+
+/* "Take now": a soft pulsing halo around the next dose. Paired with a text
+   label, so it never carries meaning on its own. */
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--color-accent), 0 0 12px 2px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px var(--color-accent), 0 0 28px 8px color-mix(in srgb, var(--color-accent) 45%, transparent);
+  }
+}
+
+.glow {
+  animation: glow 2.4s ease-in-out infinite;
+}
+
+/* The scanner beam that sweeps over the photo while it is being read. */
+@keyframes scan-sweep {
+  0% {
+    top: 0%;
+  }
+  50% {
+    top: calc(100% - 4px);
+  }
+  100% {
+    top: 0%;
+  }
+}
+
+.scan-beam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--color-accent);
+  box-shadow: 0 0 18px 6px color-mix(in srgb, var(--color-accent) 55%, transparent);
+  animation: scan-sweep 2.2s ease-in-out infinite;
+}
+
+/* Microphone: a slow "breathing" pulse at rest, expanding rings while
+   listening. The rings sit behind the button and never block it. */
+@keyframes mic-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+@keyframes mic-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.mic-idle {
+  animation: mic-breathe 3s ease-in-out infinite;
+}
+
+.mic-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: mic-ring 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+.mic-ring.delay {
+  animation-delay: 0.9s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Keep a static, still-visible state instead of animating. */
+  .mic-ring {
+    opacity: 0.25;
+    transform: scale(1.15);
+  }
+  .glow {
+    box-shadow: 0 0 0 4px var(--color-accent);
+  }
+  .scan-beam {
+    top: 50%;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

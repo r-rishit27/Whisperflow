@@ -11,11 +11,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Replace this job's steps once the project has a toolchain.
-      # Node:   actions/setup-node@v4  -> npm ci && npm test
-      # Python: actions/setup-python@v5 -> pip install -e .[dev] && pytest
-      - name: Placeholder
-        run: echo "No build or test suite configured yet."
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          OPENAI_API_KEY: test
+          SESSION_SECRET: ci-only-placeholder-secret-not-used-anywhere
 
   secret-scan:
     runs-on: ubuntu-latest

@@ -38,3 +38,5 @@ scratch/
 .idea/
 .DS_Store
 Thumbs.db
+next-env.d.ts
+*.tsbuildinfo

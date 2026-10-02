@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Replace this job's steps once the project has a toolchain.
+      # Node:   actions/setup-node@v4  -> npm ci && npm test
+      # Python: actions/setup-python@v5 -> pip install -e .[dev] && pytest
+      - name: Placeholder
+        run: echo "No build or test suite configured yet."
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fail if a .env file is tracked
+        run: |
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "::error::.env is tracked in git — remove it and rotate the keys."
+            exit 1
+          fi

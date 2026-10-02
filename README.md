@@ -7,6 +7,17 @@ when a dose is missed.
 *Medi* + *mantra* (a formula you repeat until it becomes habit). The built-in
 voice assistant is **MediMitra**, *mitra* meaning "friend".
 
+### Live
+
+| | URL | Status |
+| --- | --- | --- |
+| **Main site** | **<https://medimantra-psi.vercel.app>** | Live on Vercel, Mumbai. Verified end to end. |
+| Second deployment | <https://medimantra-w9er.onrender.com> | Live on Render, Singapore. Verified end to end. Free plan: it sleeps when idle, so the first visit can take about a minute. |
+
+Open the main site on a phone: set up a patient in English, Hindi or Telugu,
+scan a prescription, and try MediMitra. To see the family view, open
+**Family → See what your family sees**.
+
 <p>
   <img src="docs/screenshots/phone-today-hindi.png" width="200" alt="Today screen in Hindi: greeting, progress ring, morning doses with Taken and Skip buttons" />
   <img src="docs/screenshots/phone-reminder.png" width="200" alt="Full-screen reminder: Time for your medicine, with a big I took them button" />
@@ -26,6 +37,7 @@ voice assistant is **MediMitra**, *mitra* meaning "friend".
 - [System architecture: high level](#system-architecture-high-level)
 - [System architecture: low level](#system-architecture-low-level)
 - [Database schema](#database-schema)
+- [Deployment](#deployment)
 - [Run it locally](#run-it-locally)
 - [Testing](#testing)
 - [MediMantra and Wispr Flow](#medimantra-and-wispr-flow)
@@ -395,6 +407,122 @@ erDiagram
 
 The full DDL is in [`schema.sql`](schema.sql).
 
+## Deployment
+
+MediMantra is a single Next.js app, so the frontend and backend deploy
+together. It's deployed twice from the same commit: on **Vercel** (the main
+site) and on **Render** (a second host). Both use the same Supabase database
+and OpenAI account.
+
+```mermaid
+flowchart LR
+  U["📱 Patients & family<br/>(India)"]
+
+  subgraph VC["Vercel (main site)"]
+    VE["Edge network<br/>medimantra-psi.vercel.app"]
+    VF["Serverless functions<br/>bom1 · Mumbai<br/>pages · actions · /api/*"]
+    VE --> VF
+  end
+
+  subgraph RD["Render (second host)"]
+    RW["Web service · Node 22<br/>Singapore · free plan<br/>npm run build → npm start"]
+  end
+
+  subgraph SB["Supabase · ap-south-1 Mumbai"]
+    PL["Supavisor pooler<br/>IPv4 · transaction mode :6543"]
+    PG[("Postgres<br/>RLS on, app_user")]
+    PL --> PG
+  end
+
+  OA["OpenAI API<br/>gpt-5.5 · gpt-4o-transcribe · gpt-4o-mini-tts"]
+  GH["GitHub<br/>r-rishit27/Whisperflow<br/>branch feature/medimantra"]
+  DEV["Developer machine<br/>vercel deploy --prod"]
+
+  U --> VE
+  U --> RW
+  VF -- "app_user.&lt;ref&gt;" --> PL
+  RW -- "app_user.&lt;ref&gt;" --> PL
+  VF --> OA
+  RW --> OA
+  DEV -- "upload (.env excluded)" --> VC
+  GH -- "auto-deploy on push" --> RD
+```
+
+### Decisions and reasons
+
+| Decision | Why |
+| --- | --- |
+| **Functions pinned to Mumbai** (`bom1` in [`vercel.json`](vercel.json)) | The database is in Mumbai (`ap-south-1`). Every request makes several database calls, so co-locating them avoids a round trip across the world on each one. |
+| **Supabase's IPv4 transaction pooler, port 6543** | Supabase's "direct" database host only has an IPv6 address, which Vercel and Render can't reach. The pooler is IPv4 and built for serverless. Transaction mode needs `prepare: false`, which [`lib/db.ts`](lib/db.ts) sets automatically for port 6543. |
+| **The pooler is safe for row-level security** | The patient's identity is set with `set_config(…, true)` inside each transaction and cleared when it ends. This was checked on the live pooler: inside a transaction the identity is set, after it the value is empty, and a query with no identity returns 0 rows. |
+| **Only `app_user` credentials are in the cloud** | Production has no `ADMIN_DATABASE_URL`. The owner (`postgres`) password never leaves the developer machine, so a compromised host can only do what the RLS policies allow. |
+| **Secrets stored as "sensitive"** | Vercel's sensitive variables can't be read back from the dashboard or CLI. Values were piped in through stdin, never typed on a command line or written to a log. |
+| **A separate production `SESSION_SECRET`** | Production cookies can't be forged with the development secret, and rotating it signs out only production users. |
+| **[`.vercelignore`](.vercelignore)** | `vercel deploy` uploads the folder, not the Git tree. This keeps `.env` and `.env.local` from ever being uploaded. |
+| **Sign-in routing in [`proxy.ts`](proxy.ts)** | It runs before rendering on both hosts, so signed-out visitors get a real 307 to the first screen even though pages stream. |
+| **Render health check on `/login`** | `/` redirects when signed out; `/login` returns 200 with no session, which is what a health check needs. |
+
+### Environment variables in production
+
+| Variable | Vercel | Render |
+| --- | :---: | :---: |
+| `DATABASE_URL` (`app_user.<ref>` on the pooler, `:6543`) | ✓ sensitive | ✓ |
+| `OPENAI_API_KEY` | ✓ sensitive | ✓ |
+| `SESSION_SECRET` (production-only value) | ✓ sensitive | ✓ |
+| `NODE_VERSION=22`, `NEXT_TELEMETRY_DISABLED=1` | n/a | ✓ |
+| `ADMIN_DATABASE_URL` | **not set, deliberately** | **not set, deliberately** |
+| `APP_URL` | not needed | not needed |
+
+`APP_URL` isn't needed on either host. Both pass the public host in
+`x-forwarded-host`, which [`lib/origin.ts`](lib/origin.ts) uses to build the
+family share link.
+
+### Verified against production
+
+The end-to-end suites were run against **both live sites**, using the
+production session secret:
+
+| Suite | Vercel | Render |
+| --- | :---: | :---: |
+| `app:verify` (first-screen sign-in, family-code sign-in, registration, family access) | 54 / 54 | 54 / 54 |
+| `family:verify` | 34 / 34 | 34 / 34 |
+| `i18n:verify` | 26 / 26 | 26 / 26 |
+| `voice:verify` (live OpenAI, Hindi and Telugu) | 23 / 23 | 23 / 23 |
+
+Response headers confirm requests are served from Mumbai
+(`x-vercel-id: bom1::bom1::…`). `scan:verify` can only run against a local
+dev server, because it reads the dev build's server-action manifest; scanning
+was tested locally against the same database and model.
+
+Render builds from GitHub. Its first build took about 90 seconds and serves
+the same commit as Vercel.
+
+### Redeploying
+
+```bash
+# Vercel (main site): deploys the working folder
+vercel deploy --prod
+
+# Render: deploys automatically on every push to the branch
+git push origin feature/medimantra
+# …or trigger one by hand
+render deploys create srv-davo7mjtqb8s73fn0osg
+```
+
+Schema changes are applied from a developer machine with `npm run db:migrate`
+(owner connection) **before** deploying code that depends on them.
+
+### Cost and abuse: read before sharing widely
+
+- Anyone can create a patient, and **scanning and MediMitra call OpenAI on
+  your key**. There is no per-user quota yet. Set a monthly spend limit in
+  the OpenAI dashboard before sharing the link widely.
+- Sign-in and `/family/<code>` are not rate-limited. Add rate limiting (for
+  example Vercel Firewall rules or Upstash) before a public launch.
+- Both hosts run on free tiers: Render sleeps when idle, and Vercel Hobby
+  caps function duration at 60 seconds, which a slow prescription read could
+  approach.
+
 ## Run it locally
 
 You'll need Node.js 20 or newer, a free [Supabase](https://supabase.com)
@@ -564,6 +692,8 @@ that helps the people who need it and one they can't use.
   screen before the look-up finishes.
 - **A voice turn takes about 7–8 seconds**: three model calls in sequence.
 - **One time zone** (India) and three fixed slots (8 AM, 1 PM, 9 PM).
+- **No usage limits on the public deployment**: see
+  [Cost and abuse](#cost-and-abuse-read-before-sharing-widely).
 
 **Next:**
 
@@ -579,6 +709,8 @@ that helps the people who need it and one they can't use.
 ```
 .
 ├── proxy.ts                  # sign-in routing before render
+├── vercel.json               # Next.js, functions in bom1 (Mumbai)
+├── .vercelignore             # never upload .env with the CLI
 ├── schema.sql                # tables, enums, RLS, app.* functions
 ├── app/
 │   ├── page.tsx              # Today dashboard

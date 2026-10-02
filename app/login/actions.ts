@@ -9,12 +9,28 @@ import type { Dictionary } from "@/lib/i18n";
 export type LoginErrorKey = keyof Dictionary["login"]["errors"];
 export type LoginState = { error?: LoginErrorKey } | undefined;
 
-const credentials = z.object({
-  patientId: z.string().trim().uuid({ error: "idFormat" }),
-  password: z
+const password = z
+  .string()
+  .min(8, { error: "passwordShort" })
+  .max(200, { error: "passwordLong" });
+
+// Registration claims an account, so it needs the patient ID shown once on
+// the welcome screen -- never the family code, which is shared on WhatsApp.
+const registration = z.object({
+  patientId: z.string().trim().uuid({ error: "registerId" }),
+  password,
+});
+
+// Sign-in accepts the family code (easy to remember) or the patient ID.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SHARE_CODE = /^[2-9A-HJ-NP-Z]{6}$/;
+const signInCredentials = z.object({
+  identifier: z
     .string()
-    .min(8, { error: "passwordShort" })
-    .max(200, { error: "passwordLong" }),
+    .trim()
+    .transform((v) => (UUID.test(v) ? v.toLowerCase() : v.toUpperCase().replace(/\s+/g, "")))
+    .refine((v) => UUID.test(v) || SHARE_CODE.test(v), { error: "idFormat" }),
+  password,
 });
 
 const shareCode = z.object({
@@ -32,7 +48,7 @@ export async function registerAction(
   _prev: LoginState,
   formData: FormData,
 ): Promise<LoginState> {
-  const parsed = credentials.safeParse({
+  const parsed = registration.safeParse({
     patientId: formData.get("patientId"),
     password: formData.get("password"),
   });
@@ -52,13 +68,14 @@ export async function signInAction(
   _prev: LoginState,
   formData: FormData,
 ): Promise<LoginState> {
-  const parsed = credentials.safeParse({
-    patientId: formData.get("patientId"),
+  const parsed = signInCredentials.safeParse({
+    // "patientId" is still accepted from older forms and bookmarks.
+    identifier: formData.get("identifier") ?? formData.get("patientId"),
     password: formData.get("password"),
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
 
-  const result = await signIn(parsed.data.patientId, parsed.data.password);
+  const result = await signIn(parsed.data.identifier, parsed.data.password);
   if (!result.ok) return { error: result.code };
 
   redirect("/");

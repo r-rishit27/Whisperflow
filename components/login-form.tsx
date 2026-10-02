@@ -133,17 +133,22 @@ export function LoginForm({
         <form action={signinSubmit} className="flex flex-col gap-5">
           <div>
             <label htmlFor="signin-id" className="mb-2 block text-xl font-bold">
-              {t.login.patientId}
+              {t.login.identifier}
             </label>
             <input
               id="signin-id"
-              name="patientId"
+              name="identifier"
               required
               autoComplete="username"
+              autoCapitalize="characters"
               spellCheck={false}
-              placeholder="0000-0000-…"
-              className={`${fieldClass} font-mono text-lg`}
+              placeholder="K7M2QX"
+              aria-describedby="signin-id-hint"
+              className={`${fieldClass} font-mono text-2xl tracking-[0.15em]`}
             />
+            <p id="signin-id-hint" className="mt-2 text-base text-ink-muted">
+              {t.login.identifierHint}
+            </p>
           </div>
           <div>
             <label htmlFor="signin-password" className="mb-2 block text-xl font-bold">

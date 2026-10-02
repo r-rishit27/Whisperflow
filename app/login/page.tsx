@@ -2,15 +2,16 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentPatient, getCurrentSession, getLanguage } from "@/lib/current";
 import { getDictionary } from "@/lib/i18n";
+import { LANGUAGES, type Language } from "@/lib/schema";
 import { PageHeader } from "@/components/page-header";
 import { LoginForm } from "@/components/login-form";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; lang?: string }>;
 }) {
-  const { tab } = await searchParams;
+  const { tab, lang } = await searchParams;
   const session = await getCurrentSession();
 
   // A signed-in patient may still come here to register a password (the
@@ -19,7 +20,9 @@ export default async function LoginPage({
   const registering = session?.role === "patient" && tab === "register";
   if (session && !registering) redirect("/");
 
-  const language = await getLanguage();
+  // ?lang= comes from the first screen's language buttons, so the choice
+  // the person just made carries over to sign-in.
+  const language = LANGUAGES.includes(lang as Language) ? (lang as Language) : await getLanguage();
   const t = getDictionary(language);
   const patient = registering ? await getCurrentPatient() : null;
   const initialTab = tab === "register" || tab === "family" ? tab : "signin";

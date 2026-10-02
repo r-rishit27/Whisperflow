@@ -89,7 +89,7 @@ impact below is what it is designed for, not something measured in a trial.
 | | | |
 | :---: | :---: | :---: |
 | <img src="docs/screenshots/phone-onboarding-hindi.png" width="230" alt="Onboarding in Hindi with three large language buttons" /> | <img src="docs/screenshots/phone-scan.png" width="230" alt="Scan screen with a big camera button and an upload button" /> | <img src="docs/screenshots/phone-today-hindi.png" width="230" alt="Today dashboard in Hindi" /> |
-| **Onboarding.** Three questions. The whole screen switches language the moment a language is tapped. | **Scan.** A big camera button, an upload button, and a "Reading your prescription…" scanner animation. | **Today.** Greeting, progress ring, doses grouped by time. The next dose glows. |
+| **First screen.** Returning patients sign in at the top. New ones answer three questions, and the screen switches language the moment one is tapped. | **Scan.** A big camera button, an upload button, and a "Reading your prescription…" scanner animation. | **Today.** Greeting, progress ring, doses grouped by time. The next dose glows. |
 | <img src="docs/screenshots/phone-reminder.png" width="230" alt="Full-screen medicine reminder" /> | <img src="docs/screenshots/phone-voice.png" width="230" alt="MediMitra voice assistant" /> | <img src="docs/screenshots/phone-family-tab.png" width="230" alt="Family tab with share code, WhatsApp and copy buttons" /> |
 | **Reminder.** Chime, notification and a full-screen card with one big button. | **MediMitra.** Tap, speak, and hear the answer. Large chat bubbles. | **Family tab.** Share code, Copy link, Share on WhatsApp, language and sign-out settings. |
 | <img src="docs/screenshots/phone-family-telugu.png" width="230" alt="Family dashboard in Telugu" /> | <img src="docs/screenshots/phone-family-dark.png" width="230" alt="Family dashboard in dark mode" /> | |
@@ -182,7 +182,7 @@ browser.
 | --- | --- |
 | [`proxy.ts`](proxy.ts) | Runs before every page: sends signed-out visitors to onboarding and signed-in users away from onboarding and sign-in, with real 307s. |
 | [`lib/session-token.ts`](lib/session-token.ts) | Signs and verifies the session cookie (`patientId.role.HMAC`). Shared by the proxy and `auth.ts`. |
-| [`lib/auth.ts`](lib/auth.ts) | scrypt password hashing, sessions, register / sign-in / share-code sign-in, and the language cookie. Returns error *codes* for the UI to translate. |
+| [`lib/auth.ts`](lib/auth.ts) | scrypt password hashing, sessions, register / sign-in (by family code or patient ID) / family share-code sign-in, and the language cookie. Returns error *codes* for the UI to translate. |
 | [`lib/db.ts`](lib/db.ts) | Lazy postgres.js pool, plus `withPatient(id, role, fn)`, which runs `fn` in a transaction with `app.current_patient` and `app.current_role` set. |
 | [`lib/data.ts`](lib/data.ts) | Every query: patients, medicines, saving a scan, generating dose rows, marking overdue doses missed, adherence, marking doses taken by voice. |
 | [`lib/schema.ts`](lib/schema.ts) | Client-safe types, constants and Zod schemas, including the strict JSON schema the vision model must fill. |
@@ -215,6 +215,22 @@ flowchart TB
   `app.set_password`, `app.resolve_share_code`) instead of loosening a policy.
 - **The voice and scan routes never take a patient id from the request.** It
   always comes from the signed cookie.
+
+### Signing in
+
+| Who | How | Gets |
+| --- | --- | --- |
+| New patient | First screen: name, language, caregiver | A patient session, a patient ID and a family code. |
+| Returning patient, new phone | **Sign in** (top of the first screen): **6-letter family code** (or patient ID) and password | Their saved schedule straight away. Nothing is asked again. |
+| Same phone | Nothing: the session lasts 30 days | Straight to Today. |
+| Family member | **For family members**: the family code only | Read-only view plus checking doses off (`caregiver` role). |
+
+The family code works like a username at sign-in, and the password protects
+it. Setting a password the first time needs the **patient ID** instead,
+because the family code is shared on WhatsApp and must never be enough to
+claim an account. Every sign-in failure (unknown code, unknown ID, wrong
+password) gets the same message and takes the same time, so accounts can't
+be probed.
 
 ### Flow: scanning a prescription
 
@@ -402,7 +418,7 @@ Fill in:
 
 | Variable | Where to get it |
 | --- | --- |
-| `ADMIN_DATABASE_URL` | Supabase → **Project Settings → Database → Connection string**. The `postgres` user, with your database password. Use the **Session pooler** string if your network has no IPv6. |
+| `ADMIN_DATABASE_URL` | Supabase → **Project Settings → Database → Connection string → Session pooler** (port 5432). The `postgres.<project-ref>` user, with your database password. The pooler works on IPv4; the "direct" host is IPv6-only and fails on many networks and on Vercel or Render. |
 | `OPENAI_API_KEY` | OpenAI dashboard. |
 | `SESSION_SECRET` | Run `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 
@@ -413,8 +429,10 @@ npm run db:migrate     # applies schema.sql (idempotent)
 npm run db:provision   # creates app_user and prints its DATABASE_URL
 ```
 
-Paste the printed `DATABASE_URL=…` line into `.env`. That is the restricted
-role the app runs as; `ADMIN_DATABASE_URL` is only for migrations.
+Paste the printed `DATABASE_URL=…` line into `.env`, then change it to the
+**transaction pooler**: host `aws-0-<region>.pooler.supabase.com`, port
+`6543`, user `app_user.<project-ref>`. That is the restricted role the app
+runs as; `ADMIN_DATABASE_URL` is only for migrations.
 
 **4. Run**
 
@@ -422,8 +440,9 @@ role the app runs as; `ADMIN_DATABASE_URL` is only for migrations.
 npm run dev
 ```
 
-Open <http://localhost:3000>. You'll land on onboarding. Pick a language,
-add a caregiver, then **Scan** any prescription photo. For the full
+Open <http://localhost:3000>. You'll land on the first screen: **Sign in**
+at the top if you already have an account, or answer three questions to set
+up. Then **Scan** any prescription photo. For the full
 experience, allow notifications and the microphone when asked.
 
 **5. (Optional) Production build**
@@ -456,7 +475,7 @@ afterwards.
 | Command | Checks | What it proves |
 | --- | ---: | --- |
 | `npm run db:verify` | 37 | Schema, constraints, dose generation, and that **RLS really blocks** cross-patient reads and writes. |
-| `npm run app:verify` | 45 | Onboarding, welcome, sign-in, registration, family sign-in and forged cookies, all driven without JavaScript. |
+| `npm run app:verify` | 54 | Onboarding, welcome, sign-in by patient ID **and by family code**, registration (code refused), family sign-in and forged cookies, all driven without JavaScript. |
 | `npm run scan:verify` | 39 | A seeded prescription is read correctly (every shorthand, a duplicate, an interaction), edited, saved, and appears on the dashboard. *Uses OpenAI.* |
 | `npm run voice:verify` | 23 | Synthesised speech in English, Hindi and Telugu. Marks the right doses, refuses not-yet-due ones, declines medical advice. *Uses OpenAI.* |
 | `npm run family:verify` | 34 | The public dashboard's numbers match the database, the alert threshold works, and the WhatsApp message and reminder feed are correct. |
@@ -467,7 +486,7 @@ another terminal (pass `-- --base http://localhost:3000` if needed). On top of
 these, a Playwright pass checked what only a real browser can: the reminder
 firing at a faked 9:01 PM, the chime and notification, the Recharts chart in
 light and dark, speaking into a fake microphone, and layout at phone and
-desktop widths. That's 227 checks in total.
+desktop widths. That's 236 checks in total.
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs typecheck,
 lint and a production build on every push, plus a check that `.env` is never

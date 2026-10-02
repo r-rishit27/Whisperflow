@@ -109,6 +109,8 @@ try {
   check("/onboarding renders", onboarding.status === 200);
   check("three language choices shown", ["English", "हिन्दी", "తెలుగు"].every((l) => onboardingHtml.includes(l)));
   check("caregiver fields present", onboardingHtml.includes('name="caregiverName"') && onboardingHtml.includes('name="caregiverPhone"'));
+  check("first screen offers sign-in to returning patients", onboardingHtml.includes("Already using MediMantra?") && onboardingHtml.includes('href="/login?lang=en"'));
+  check("first screen links family members to code sign-in", onboardingHtml.includes('href="/login?tab=family&amp;lang=en"'));
 
   // -----------------------------------------------------------------
   console.log("\n2. Onboarding (server action, no JS)");
@@ -266,7 +268,7 @@ try {
   const signinPage = await get("/login");
   const signinFields = actionFields(await signinPage.text(), 0);
   const badSignin = await postAction("/login", signinFields, {
-    patientId,
+    identifier: patientId,
     password: "wrong-password",
   });
   const badBody = await badSignin.text();
@@ -278,14 +280,59 @@ try {
   const goodPage = await get("/login");
   const goodFields = actionFields(await goodPage.text(), 0);
   const goodSignin = await postAction("/login", goodFields, {
-    patientId,
+    identifier: patientId,
     password: "medimantra-test-pw",
   });
-  check("correct password accepted", goodSignin.status < 400 && jar.has("mm_session"), `status ${goodSignin.status}`);
+  check("correct password accepted (patient ID)", goodSignin.status < 400 && jar.has("mm_session"), `status ${goodSignin.status}`);
 
   const signedIn = await get("/");
   const signedInHtml = await signedIn.text();
   check("signed-in Today shows the patient's medicine", signedInHtml.includes("E2E Metformin"));
+
+  // ---------------------------------------------------------------
+  console.log("\n8b. Sign in with the family code (returning patient, new phone)");
+  if (shareCode) {
+    const signInWith = async (identifier, password) => {
+      jar = new Map();
+      const page = await get("/login");
+      const fields = actionFields(await page.text(), 0);
+      const res = await postAction("/login", fields, { identifier, password });
+      return { res, body: await res.text(), cookie: jar.get("mm_session") ?? "" };
+    };
+
+    const byCode = await signInWith(shareCode, "medimantra-test-pw");
+    check("family code + password signs the patient in", byCode.res.status < 400 && byCode.cookie.startsWith(`${patientId}.patient.`), `status ${byCode.res.status}`);
+    const home = await get("/");
+    const homeHtml = await home.text();
+    check("lands on their saved schedule, no details asked again", home.status === 200 && homeHtml.includes("E2E Metformin"));
+
+    const typed = shareCode.toLowerCase().replace(/(...)/, "$1 ");
+    const byTyped = await signInWith(typed, "medimantra-test-pw");
+    check("code works lowercase and with a space", byTyped.cookie.startsWith(`${patientId}.patient.`), `typed "${typed}"`);
+
+    const wrong = await signInWith(shareCode, "not-the-password");
+    check("family code + wrong password rejected", wrong.body.includes("do not match") && !wrong.cookie);
+
+    const unknown = await signInWith("ZZZZZ2", "medimantra-test-pw");
+    check("unknown code gets the same message (no account probing)", unknown.body.includes("do not match") && !unknown.cookie);
+
+    const junk = await signInWith("hello!", "medimantra-test-pw");
+    check("malformed identifier explained", junk.body.includes("6-letter family code or your patient ID"));
+
+    // The family code is shared on WhatsApp: it must never claim an account.
+    jar = new Map();
+    const regPage = await get("/login?tab=register");
+    const regFields = actionFields(await regPage.text(), 0);
+    const regByCode = await postAction("/login", regFields, {
+      patientId: shareCode,
+      password: "attacker-password",
+      confirm: "attacker-password",
+    });
+    const regBody = await regByCode.text();
+    check("family code cannot be used to register", regBody.includes("not the family code") && !jar.has("mm_session"));
+  } else {
+    console.log("  SKIP  share code was not captured");
+  }
 
   // -----------------------------------------------------------------
   console.log("\n9. Caregiver share-code sign-in");

@@ -159,19 +159,43 @@ export async function register(
   return { ok: true };
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Which patient an identifier names: a patient ID, or a family share code. */
+async function resolveIdentifier(identifier: string): Promise<string | null> {
+  if (UUID.test(identifier)) return identifier;
+  const rows = await sql<{ id: string | null }[]>`
+    select app.resolve_share_code(${identifier.toUpperCase()}) as id
+  `;
+  return rows.at(0)?.id ?? null;
+}
+
+/**
+ * Patient sign-in with a password, by patient ID *or* 6-letter family code.
+ *
+ * The family code is far easier for an elderly person to remember than a
+ * UUID, and is safe to use here: it is shared with family, so it works
+ * like a username -- the password is what protects the account. (It is
+ * deliberately NOT accepted by register(), where it would let anyone who
+ * received the family link set the password first.)
+ */
 export async function signIn(
-  patientId: string,
+  identifier: string,
   password: string,
 ): Promise<AuthResult> {
-  const rows = await sql<{ id: string; password_hash: string | null }[]>`
-    select * from app.auth_lookup(${patientId}::uuid)
-  `;
+  const patientId = await resolveIdentifier(identifier);
+  const rows = patientId
+    ? await sql<{ id: string; password_hash: string | null }[]>`
+        select * from app.auth_lookup(${patientId}::uuid)
+      `
+    : [];
   const patient = rows.at(0);
 
+  // Always hash, so an unknown code or ID takes as long as a wrong password.
   const valid = await verifyPassword(password, patient?.password_hash ?? null);
 
-  // One message for both failures, so this cannot be used to discover which
-  // patient IDs exist.
+  // One message for every failure, so this cannot be used to discover which
+  // codes or patient IDs exist.
   if (!patient || !valid) {
     return { ok: false, code: "mismatch" };
   }
